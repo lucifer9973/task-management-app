@@ -32,10 +32,26 @@ export default function TaskForm({ onCreated }) {
     );
   };
 
+  const updateField = (field) => (event) => {
+    setForm({ ...form, [field]: event.target.value });
+    if (message) {
+      setMessage("");
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!isValidDueDate(form.dueDate)) {
+    const title = form.title.trim();
+    const description = form.description.trim();
+    const dueDate = form.dueDate.trim();
+
+    if (!title || !description || !dueDate) {
+      setMessage("Fill in the title, description, and due date");
+      return;
+    }
+
+    if (!isValidDueDate(dueDate)) {
       setMessage("Select today or a future due date");
       return;
     }
@@ -44,7 +60,12 @@ export default function TaskForm({ onCreated }) {
     setMessage("");
 
     try {
-      await api.post("/tasks", form);
+      await api.post("/tasks", {
+        ...form,
+        title,
+        description,
+        dueDate
+      });
       setForm(initialForm);
       setMessage("Task created");
       onCreated();
@@ -56,7 +77,7 @@ export default function TaskForm({ onCreated }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="stack">
+    <form onSubmit={handleSubmit} className="stack" noValidate>
       <h2>Create Task Form</h2>
       <div className="row">
         <div className="field">
@@ -64,7 +85,7 @@ export default function TaskForm({ onCreated }) {
           <input
             id="title"
             value={form.title}
-            onChange={(event) => setForm({ ...form, title: event.target.value })}
+            onChange={updateField("title")}
             required
           />
         </div>
@@ -73,7 +94,7 @@ export default function TaskForm({ onCreated }) {
           <select
             id="priority"
             value={form.priority}
-            onChange={(event) => setForm({ ...form, priority: event.target.value })}
+            onChange={updateField("priority")}
           >
             <option value="low">Low</option>
             <option value="medium">Medium</option>
@@ -88,7 +109,7 @@ export default function TaskForm({ onCreated }) {
             min={minDueDate}
             max="9999-12-31"
             value={form.dueDate}
-            onChange={(event) => setForm({ ...form, dueDate: event.target.value })}
+            onChange={updateField("dueDate")}
             required
           />
         </div>
@@ -99,7 +120,7 @@ export default function TaskForm({ onCreated }) {
           id="description"
           rows="3"
           value={form.description}
-          onChange={(event) => setForm({ ...form, description: event.target.value })}
+          onChange={updateField("description")}
           required
         />
       </div>
