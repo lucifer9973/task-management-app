@@ -11,6 +11,7 @@ const createTaskSchema = Joi.object({
 	title: Joi.string().trim().required(),
 	description: Joi.string().trim().required(),
 	priority: Joi.string().valid("low", "medium", "high").required(),
+	comments: Joi.string().trim().allow("").max(4000).default(""),
 	dueDate: Joi.string()
 		.pattern(/^\d{4}-\d{2}-\d{2}$/)
 		.custom((value, helpers) => {
@@ -100,15 +101,25 @@ router.post("/", async (req, res, next) => {
 			priority: value.priority,
 			status: "open",
 			dueDate: new Date(`${value.dueDate}T00:00:00.000Z`).toISOString(),
-			createdAt: new Date().toISOString()
+			createdAt: new Date().toISOString(),
+			comments: value.comments
 		};
 
 		await run(
 			`
-				INSERT INTO tasks (id, title, description, priority, status, dueDate, createdAt)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO tasks (id, title, description, priority, status, dueDate, createdAt, comments)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			`,
-			[task.id, task.title, task.description, task.priority, task.status, task.dueDate, task.createdAt]
+			[
+				task.id,
+				task.title,
+				task.description,
+				task.priority,
+				task.status,
+				task.dueDate,
+				task.createdAt,
+				task.comments
+			]
 		);
 
 		res.status(201).json({ success: true, data: task });
@@ -166,13 +177,17 @@ router.get("/", async (req, res, next) => {
 
 router.patch("/:id", async (req, res, next) => {
 	try {
-		const { status } = req.body;
+		const updateSchema = Joi.object({
+			status: Joi.string().valid("open", "in-progress", "done"),
+			comments: Joi.string().trim().allow("").max(4000)
+		}).min(1);
 
-		// Reject unknown status values
-		if (!["open", "in-progress", "done"].includes(status)) {
+		const { error, value } = updateSchema.validate(req.body, { abortEarly: false });
+
+		if (error) {
 			return res.status(400).json({
 				success: false,
-				message: "Invalid status transition"
+				message: error.details.map((detail) => detail.message).join(", ")
 			});
 		}
 
@@ -185,21 +200,45 @@ router.patch("/:id", async (req, res, next) => {
 			});
 		}
 
-		// If already in the target status, no update needed
-		if (task.status === status) {
-			return res.json({ success: true, data: task });
+		const nextStatus = value.status ?? task.status;
+		const normalizedComments = value.comments === undefined ? undefined : value.comments.trim();
+
+		if (normalizedComments !== undefined && nextStatus !== "in-progress") {
+			return res.status(400).json({
+				success: false,
+				message: "Comments can only be added while a task is in progress"
+			});
 		}
 
-		// Keep status changes sequential: open -> in-progress -> done
-		// This prevents skipping steps in the workflow
-		if (allowedTransitions[task.status] !== status) {
+		if (value.status && task.status !== value.status && allowedTransitions[task.status] !== value.status) {
 			return res.status(400).json({
 				success: false,
 				message: "Invalid status transition"
 			});
 		}
 
-		await run("UPDATE tasks SET status = ? WHERE id = ?", [status, req.params.id]);
+		if (!value.status && normalizedComments === undefined) {
+			return res.json({ success: true, data: task });
+		}
+
+		if (value.status === task.status && normalizedComments === undefined) {
+			return res.json({ success: true, data: task });
+		}
+
+		const updates = [];
+		const params = [];
+
+		if (value.status && value.status !== task.status) {
+			updates.push("status = ?");
+			params.push(value.status);
+		}
+
+		if (normalizedComments !== undefined) {
+			updates.push("comments = ?");
+			params.push(normalizedComments);
+		}
+
+		await run(`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`, [...params, req.params.id]);
 		const updatedTask = await queryGet("SELECT * FROM tasks WHERE id = ?", [req.params.id]);
 
 		res.json({ success: true, data: updatedTask });

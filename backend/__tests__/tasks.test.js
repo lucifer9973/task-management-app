@@ -26,4 +26,27 @@ describe("POST /tasks", () => {
     });
     expect(response.body.data.id).toBeDefined();
   });
+
+  it("saves comments for tasks in progress", async () => {
+    const createResponse = await request(app).post("/tasks").send({
+      title: "Review draft",
+      description: "Check the latest notes",
+      priority: "medium",
+      dueDate: "2026-06-16"
+    });
+
+    const taskId = createResponse.body.data.id;
+
+    await request(app).patch(`/tasks/${taskId}`).send({ status: "in-progress" });
+
+    const commentResponse = await request(app).patch(`/tasks/${taskId}`).send({
+      comments: "Waiting on feedback from design before finishing the task."
+    });
+
+    expect(commentResponse.status).toBe(200);
+    expect(commentResponse.body.success).toBe(true);
+    expect(commentResponse.body.data.comments).toBe(
+      "Waiting on feedback from design before finishing the task."
+    );
+  });
 });

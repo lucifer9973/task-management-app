@@ -17,9 +17,16 @@ db.serialize(() => {
 			priority TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'open',
 			dueDate TEXT NOT NULL,
-			createdAt TEXT NOT NULL
+			createdAt TEXT NOT NULL,
+			comments TEXT NOT NULL DEFAULT ''
 		)
 	`);
+
+	db.run("ALTER TABLE tasks ADD COLUMN comments TEXT NOT NULL DEFAULT ''", (err) => {
+		if (err && !/duplicate column name/i.test(err.message)) {
+			console.error("Failed to add comments column", err.message);
+		}
+	});
 });
 
 module.exports = db;
